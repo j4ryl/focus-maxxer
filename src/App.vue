@@ -1,13 +1,21 @@
 <script setup>
 import * as faceapi from 'face-api.js';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { isFirebaseEnabled, setForcePunishment, subscribeForcePunishment } from './sync';
+import {
+  clearHallOfFame,
+  isFirebaseEnabled,
+  setForcePunishment,
+  subscribeForcePunishment,
+  subscribeHallOfFame,
+  uploadHallOfFameSnapshot,
+} from './sync';
 
 const adminPin = import.meta.env.VITE_ADMIN_PIN || 'face-rot';
 const route = ref(window.location.pathname);
 const params = new URLSearchParams(window.location.search);
 const isAdmin = computed(() => route.value.startsWith('/godmode'));
-const adminAllowed = computed(() => !isAdmin.value || params.get('pin') === adminPin);
+const isGallery = computed(() => route.value.startsWith('/gallery'));
+const adminAllowed = computed(() => (!isAdmin.value && !isGallery.value) || params.get('pin') === adminPin);
 const syncMode = computed(() => (isFirebaseEnabled() ? 'Firebase RTDB' : 'local demo mode'));
 const realtimeTokenUrl = import.meta.env.VITE_REALTIME_TOKEN_URL || '/api/realtime-token';
 
@@ -20,14 +28,17 @@ const looking = ref(true);
 const attentionLost = ref(false);
 const forcedPunishment = ref(false);
 const status = ref('Ready');
-const caption = ref('WHEN THE PROFESSOR SAYS THIS WILL BE ON THE FINAL');
+const caption = ref('');
 const auraScore = ref(20);
+const displayedAuraScore = ref(20);
 const auraPopupVisible = ref(false);
 const auraPopupKind = ref('negative');
 const auraPopupTitle = ref('Beta Status');
 const auraPopupKey = ref(0);
 const archiveCaseNumber = ref(generateCaseNumber());
 const archiveOffense = ref('LOOKING AT PHONE');
+const hallOfFame = ref([]);
+const clearingGallery = ref(false);
 
 // surveillance + session-time-driven aura float
 const sessionStartedAt = ref(0);
@@ -128,6 +139,7 @@ const subwayVideo = ref(null);
 const punishmentVideo = ref(null);
 
 let unsubscribe;
+let unsubscribeGallery;
 let mediaStream;
 let detectionInterval;
 let vibrationInterval;
@@ -145,6 +157,7 @@ let rankDownAudio;
 let clockInterval;
 let baitInterval;
 let onlineCounterInterval;
+let auraDisplayInterval;
 let lastAttentionLost = false;
 
 function generateCaseNumber() {
@@ -418,6 +431,22 @@ function drawMugshotOverlay(kind) {
   context.fillText(kind === 'positive' ? '😎' : '🤡', width / 2, 80);
 }
 
+async function uploadMugshotSnapshot(kind) {
+  const canvas = mugshotCanvas.value;
+  if (!canvas) return;
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.62));
+  if (!blob) return;
+
+  await uploadHallOfFameSnapshot({
+    blob,
+    auraScore: auraScore.value,
+    auraTitle: auraTitle.value,
+    offense: archiveOffense.value,
+    kind,
+  }).catch(() => undefined);
+}
+
 async function showAuraPopup(kind) {
   auraPopupKind.value = kind;
   auraPopupTitle.value = auraTitle.value;
@@ -428,6 +457,7 @@ async function showAuraPopup(kind) {
   archiveOffense.value = pickOffense(kind);
   await nextTick();
   drawMugshotOverlay(kind);
+  uploadMugshotSnapshot(kind);
   window.clearTimeout(auraPopupTimer);
   auraPopupTimer = window.setTimeout(() => {
     auraPopupVisible.value = false;
@@ -515,6 +545,20 @@ function updateAura(isBadAttention) {
       } catch {}
     }
   }
+}
+
+function startAuraDisplayLoop() {
+  window.clearInterval(auraDisplayInterval);
+  displayedAuraScore.value = auraScore.value;
+
+  auraDisplayInterval = window.setInterval(() => {
+    const diff = auraScore.value - displayedAuraScore.value;
+    if (diff === 0) return;
+
+    const step = Math.sign(diff) * Math.max(1, Math.ceil(Math.abs(diff) * 0.25));
+    const next = displayedAuraScore.value + step;
+    displayedAuraScore.value = diff > 0 ? Math.min(next, auraScore.value) : Math.max(next, auraScore.value);
+  }, 120);
 }
 
 function startDetectionLoop() {
@@ -665,6 +709,7 @@ async function enterFocusMode() {
     await document.documentElement.requestFullscreen?.().catch(() => undefined);
     await warmMediaElements();
     await warmRankAudio();
+    startAuraDisplayLoop();
     pushToast('> SYS: lock-in protocol engaged', 'info');
     await startRealtimeTranscription(mediaStream);
 
@@ -689,6 +734,15 @@ async function triggerPunishment() {
 
 async function releasePunishment() {
   await setForcePunishment(false);
+}
+
+async function clearGallery() {
+  clearingGallery.value = true;
+  try {
+    await clearHallOfFame();
+  } finally {
+    clearingGallery.value = false;
+  }
 }
 
 watch(punishmentActive, (active) => {
@@ -717,6 +771,10 @@ unsubscribe = subscribeForcePunishment((isForced) => {
   forcedPunishment.value = isForced;
 });
 
+unsubscribeGallery = subscribeHallOfFame((items) => {
+  hallOfFame.value = items;
+});
+
 onMounted(() => {
   reducedMotion.value =
     window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
@@ -739,10 +797,12 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   unsubscribe?.();
+  unsubscribeGallery?.();
   window.clearInterval(detectionInterval);
   window.clearInterval(clockInterval);
   window.clearInterval(baitInterval);
   window.clearInterval(onlineCounterInterval);
+  window.clearInterval(auraDisplayInterval);
   window.clearTimeout(auraPopupTimer);
   stopVibration();
   realtimeDataChannel?.close?.();
@@ -765,7 +825,42 @@ const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value
 
 <template>
   <main class="app-shell" :class="{ admin: isAdmin, started: started && !isAdmin, punishing: punishmentActive, 'reduced-motion': reducedMotion }">
-    <section v-if="isAdmin" class="admin-screen">
+    <section v-if="isGallery" class="gallery-screen">
+      <div v-if="!adminAllowed" class="locked">
+        <h1>Locked</h1>
+        <p>Open with the admin PIN query string.</p>
+      </div>
+
+      <template v-else>
+        <header class="gallery-header">
+          <div>
+            <p>{{ syncMode }}</p>
+            <h1>Hall of Fame</h1>
+          </div>
+          <button class="clear-gallery-button" type="button" :disabled="clearingGallery" @click="clearGallery">
+            {{ clearingGallery ? 'Clearing' : 'Clear Gallery' }}
+          </button>
+        </header>
+
+        <div v-if="hallOfFame.length" class="gallery-grid">
+          <article v-for="entry in hallOfFame" :key="entry.id" class="gallery-card" :class="entry.kind">
+            <img :src="entry.imageUrl" :alt="entry.auraTitle || 'FocusMaxxer mugshot'" />
+            <div class="gallery-card-copy">
+              <strong>{{ entry.auraTitle }}</strong>
+              <span>{{ entry.offense }}</span>
+              <em>{{ entry.auraScore }}</em>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="gallery-empty">
+          <h2>No legends archived yet</h2>
+          <p>Rank-change mugshots will appear here during the demo.</p>
+        </div>
+      </template>
+    </section>
+
+    <section v-else-if="isAdmin" class="admin-screen">
       <div v-if="!adminAllowed" class="locked">
         <h1>Locked</h1>
         <p>Open with the admin PIN query string.</p>
@@ -833,9 +928,7 @@ const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value
             <span class="aura-emoji">{{ auraEmoji }}</span>
             <span class="aura-title">{{ auraTitle }}</span>
             <span class="aura-score">
-              <Transition name="aura-roll" mode="out-in">
-                <span class="aura-score-roll" :key="auraScore">{{ auraScore }}</span>
-              </Transition>
+              <span class="aura-score-roll">{{ displayedAuraScore }}</span>
             </span>
             <div class="aura-sparkles">
               <span
@@ -1148,20 +1241,6 @@ const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value
     transform: scale(1.04);
     opacity: 1;
   }
-}
-
-/* aura number roll transition */
-.aura-roll-enter-from {
-  transform: translateY(80%);
-  opacity: 0;
-}
-.aura-roll-leave-to {
-  transform: translateY(-80%);
-  opacity: 0;
-}
-.aura-roll-enter-active,
-.aura-roll-leave-active {
-  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease;
 }
 
 .app-shell.reduced-motion .start-bg,

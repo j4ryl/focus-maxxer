@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getDatabase, onValue, ref, set } from 'firebase/database';
+import { getDatabase, onValue, push, ref, remove, set } from 'firebase/database';
+import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,13 +12,16 @@ const firebaseConfig = {
 };
 
 const punishmentPath = import.meta.env.VITE_FORCE_PUNISHMENT_PATH || '/demo/forcePunishment';
+const hallOfFamePath = import.meta.env.VITE_HALL_OF_FAME_PATH || '/demo/hallOfFame';
 const hasFirebaseConfig = Object.values(firebaseConfig).every(Boolean);
 const localKey = 'focusmaxxer.forcePunishment';
+const localHallKey = 'focusmaxxer.hallOfFame';
 const channelName = 'focusmaxxer-demo';
 
 let app;
 let auth;
 let db;
+let storage;
 let authPromise;
 let channel;
 
@@ -32,9 +36,10 @@ async function ensureFirebase() {
   app = app || initializeApp(firebaseConfig);
   auth = auth || getAuth(app);
   db = db || getDatabase(app);
+  storage = storage || getStorage(app);
   authPromise = authPromise || signInAnonymously(auth).catch(() => undefined);
   await authPromise;
-  return db;
+  return { db, storage };
 }
 
 function readLocalPunishment() {
@@ -50,7 +55,7 @@ export function subscribeForcePunishment(callback) {
     let disposed = false;
     let remoteUnsubscribe;
 
-    ensureFirebase().then((database) => {
+    ensureFirebase().then(({ db: database }) => {
       if (disposed) return;
       remoteUnsubscribe = onValue(ref(database, punishmentPath), (snapshot) => {
         callback(snapshot.val() === true);
@@ -82,11 +87,90 @@ export function subscribeForcePunishment(callback) {
 
 export async function setForcePunishment(isForced) {
   if (hasFirebaseConfig) {
-    const database = await ensureFirebase();
+    const { db: database } = await ensureFirebase();
     await set(ref(database, punishmentPath), isForced === true);
     return;
   }
 
   localStorage.setItem(localKey, String(isForced === true));
   getLocalChannel()?.postMessage(isForced === true);
+}
+
+function readLocalGallery() {
+  try {
+    return JSON.parse(localStorage.getItem(localHallKey) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+export function subscribeHallOfFame(callback) {
+  if (hasFirebaseConfig) {
+    let disposed = false;
+    let remoteUnsubscribe;
+
+    ensureFirebase().then(({ db: database }) => {
+      if (disposed) return;
+      remoteUnsubscribe = onValue(ref(database, hallOfFamePath), (snapshot) => {
+        const value = snapshot.val() || {};
+        callback(
+          Object.entries(value)
+            .map(([id, item]) => ({ id, ...item }))
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
+        );
+      });
+    });
+
+    return () => {
+      disposed = true;
+      remoteUnsubscribe?.();
+    };
+  }
+
+  callback(readLocalGallery());
+  return () => {};
+}
+
+export async function uploadHallOfFameSnapshot({ blob, auraScore, auraTitle, offense, kind }) {
+  const createdAt = Date.now();
+  const entry = {
+    auraScore,
+    auraTitle,
+    offense,
+    kind,
+    createdAt,
+  };
+
+  if (hasFirebaseConfig) {
+    const { db: database, storage: firebaseStorage } = await ensureFirebase();
+    const imagePath = `hall-of-fame/${createdAt}-${Math.random().toString(36).slice(2)}.jpg`;
+    const imageRef = storageRef(firebaseStorage, imagePath);
+    await uploadBytes(imageRef, blob, {
+      contentType: blob.type || 'image/jpeg',
+      cacheControl: 'public,max-age=31536000',
+    });
+    const imageUrl = await getDownloadURL(imageRef);
+    await push(ref(database, hallOfFamePath), { ...entry, imagePath, imageUrl });
+    return;
+  }
+
+  const reader = new FileReader();
+  await new Promise((resolve, reject) => {
+    reader.onload = resolve;
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+  const localEntry = { id: String(createdAt), ...entry, imageUrl: reader.result };
+  const next = [localEntry, ...readLocalGallery()].slice(0, 80);
+  localStorage.setItem(localHallKey, JSON.stringify(next));
+}
+
+export async function clearHallOfFame() {
+  if (hasFirebaseConfig) {
+    const { db: database } = await ensureFirebase();
+    await remove(ref(database, hallOfFamePath));
+    return;
+  }
+
+  localStorage.removeItem(localHallKey);
 }

@@ -1,10 +1,14 @@
 {
   "rules": {
     "demo": {
-      "activeVideo": {
+      "forcePunishment": {
         ".read": true,
         ".write": true,
-        ".validate": "newData.isString() && newData.val().matches(/^(gta|subway|sand|family)$/)"
+        ".validate": "newData.isBoolean()"
+      },
+      "hallOfFame": {
+        ".read": true,
+        ".write": true
       }
     }
   }

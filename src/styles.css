@@ -318,7 +318,8 @@ h1 {
 
 .aura-hud .aura-score-roll {
   display: block;
-  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translateZ(0);
+  transition: color 180ms ease;
 }
 
 .aura-hud .aura-score-roll span {
@@ -890,6 +891,152 @@ h1 {
   font-weight: 900;
   cursor: pointer;
   pointer-events: auto;
+}
+
+/* ==========================================================================
+   Hall of Fame gallery
+   ========================================================================== */
+
+.gallery-screen {
+  width: 100vw;
+  height: 100svh;
+  overflow: auto;
+  padding: max(18px, env(safe-area-inset-top)) 16px max(22px, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 230, 0, 0.18), transparent 34rem),
+    radial-gradient(circle at 80% 10%, rgba(0, 229, 255, 0.14), transparent 30rem),
+    var(--c-ink);
+}
+
+.gallery-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 auto 18px;
+  width: min(100%, 1180px);
+}
+
+.gallery-header p {
+  margin: 0 0 4px;
+  color: #a9adb8;
+  font-size: 0.85rem;
+}
+
+.gallery-header h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.3rem, 9vw, 5.2rem);
+  line-height: 0.9;
+}
+
+.clear-gallery-button {
+  min-height: 52px;
+  padding: 0 16px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: var(--c-pink);
+  color: var(--c-paper);
+  font-family: var(--font-display);
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.clear-gallery-button:disabled {
+  opacity: 0.65;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+  width: min(100%, 1180px);
+  margin: 0 auto;
+}
+
+.gallery-card {
+  position: relative;
+  min-height: 220px;
+  overflow: hidden;
+  border: 3px solid var(--c-yellow);
+  border-radius: 8px;
+  background: #111116;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.36);
+}
+
+.gallery-card.negative {
+  border-color: var(--c-pink);
+}
+
+.gallery-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  object-fit: cover;
+}
+
+.gallery-card-copy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  gap: 2px;
+  padding: 34px 8px 8px;
+  background: linear-gradient(transparent, rgba(5, 5, 7, 0.9) 42%, rgba(5, 5, 7, 0.98));
+  text-transform: uppercase;
+}
+
+.gallery-card-copy strong {
+  color: var(--c-yellow);
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.gallery-card.negative .gallery-card-copy strong {
+  color: #ff6d8a;
+}
+
+.gallery-card-copy span,
+.gallery-card-copy em {
+  color: var(--c-paper);
+  font-family: var(--font-terminal);
+  font-size: 1rem;
+  font-style: normal;
+  line-height: 1;
+}
+
+.gallery-empty {
+  display: grid;
+  align-content: center;
+  min-height: 54svh;
+  width: min(100%, 680px);
+  margin: 0 auto;
+  text-align: center;
+}
+
+.gallery-empty h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 10vw, 4rem);
+}
+
+.gallery-empty p {
+  margin: 0;
+  color: #a9adb8;
+}
+
+@media (max-width: 560px) {
+  .gallery-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .gallery-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* ==========================================================================
