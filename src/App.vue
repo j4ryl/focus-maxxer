@@ -164,6 +164,28 @@ function generateCaseNumber() {
   return `FM-${Math.floor(Math.random() * 89999 + 10000)}`;
 }
 
+function caseTagFor(entry) {
+  const raw = String(entry?.id ?? entry?.createdAt ?? '');
+  const tail = raw.replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase();
+  return tail.padStart(4, '0') || '0000';
+}
+
+function dateFor(entry) {
+  const ts = Number(entry?.createdAt) || Number(entry?.id) || Date.now();
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '----.--.-- // --:--';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} // ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function rotationFor(entry) {
+  const raw = String(entry?.id ?? entry?.createdAt ?? '');
+  let sum = 0;
+  for (let i = 0; i < raw.length; i += 1) sum = (sum + raw.charCodeAt(i)) % 7;
+  const choices = [-2.4, -1.4, -0.6, 0, 0.7, 1.5, 2.3];
+  return choices[sum];
+}
+
 function makeBarcode() {
   const bars = [];
   let total = 0;
@@ -191,7 +213,7 @@ function emitSparkles(count = 6) {
     const sy = (-40 - Math.random() * 60) + 'px';
     const left = (Math.random() * 80 + 10) + '%';
     const top = (Math.random() * 60 + 20) + '%';
-    const glyph = ['✨', '⭐', '💫', '🔥'][Math.floor(Math.random() * 4)];
+    const glyph = ['🥁', '🗿', '🤌', '💀', '🔥', '💯', '🍝', '🧠'][Math.floor(Math.random() * 8)];
     sparkles.value.push({ id, glyph, sx, sy, left, top });
     window.setTimeout(() => {
       sparkles.value = sparkles.value.filter((s) => s.id !== id);
@@ -832,30 +854,88 @@ const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value
       </div>
 
       <template v-else>
+        <div class="gallery-lamp" aria-hidden="true"></div>
+
         <header class="gallery-header">
-          <div>
-            <p>{{ syncMode }}</p>
-            <h1>Hall of Fame</h1>
+          <p class="gallery-engraving" aria-label="Internal Affairs">
+            FOCUSMAXXER&nbsp;//&nbsp;INTERNAL AFFAIRS — CASE ARCHIVE
+          </p>
+          <div class="gallery-wordmark" aria-hidden="true">
+            <span class="tape tape-l"></span>
+            <span class="tape tape-r"></span>
+            <h1>Hall<br />of Fame</h1>
           </div>
-          <button class="clear-gallery-button" type="button" :disabled="clearingGallery" @click="clearGallery">
-            {{ clearingGallery ? 'Clearing' : 'Clear Gallery' }}
+          <p class="gallery-jurisdiction">
+            FILES ON RECORD: <strong>{{ String(hallOfFame.length).padStart(3, '0') }}</strong>
+            &nbsp;//&nbsp; JURISDICTION: SIGMA COUNTY
+            &nbsp;//&nbsp; <span>{{ syncMode }}</span>
+          </p>
+          <button
+            class="gallery-incinerate"
+            type="button"
+            :disabled="clearingGallery"
+            @click="clearGallery"
+          >
+            {{ clearingGallery ? 'PENDING…' : 'INCINERATE' }}
           </button>
         </header>
 
         <div v-if="hallOfFame.length" class="gallery-grid">
-          <article v-for="entry in hallOfFame" :key="entry.id" class="gallery-card" :class="entry.kind">
-            <img :src="entry.imageUrl" :alt="entry.auraTitle || 'FocusMaxxer mugshot'" />
-            <div class="gallery-card-copy">
-              <strong>{{ entry.auraTitle }}</strong>
-              <span>{{ entry.offense }}</span>
-              <em>{{ entry.auraScore }}</em>
+          <article
+            v-for="entry in hallOfFame"
+            :key="entry.id"
+            class="gallery-card"
+            :class="entry.kind || 'negative'"
+            :style="{ '--rot': rotationFor(entry) + 'deg' }"
+          >
+            <div class="dossier-tab" aria-hidden="true">
+              CASE #{{ caseTagFor(entry) }}
             </div>
+            <div class="dossier-date" aria-hidden="true">{{ dateFor(entry) }}</div>
+
+            <div class="dossier-photo">
+              <img :src="entry.imageUrl" :alt="entry.auraTitle || 'FocusMaxxer mugshot'" />
+              <div class="height-rule" aria-hidden="true">
+                <span>5'2</span><span>5'4</span><span>5'6</span><span>5'8</span><span>5'10</span><span>6'0</span>
+              </div>
+              <div class="placard" aria-hidden="true">
+                <span class="placard-id">SUBJ. {{ caseTagFor(entry) }}</span>
+                <span class="placard-charge">{{ entry.offense || '—' }}</span>
+              </div>
+            </div>
+
+            <dl class="dossier-meta">
+              <div class="meta-row">
+                <dt>NAME</dt>
+                <dd>{{ entry.auraTitle || 'JOHN DOE' }}</dd>
+              </div>
+              <div class="meta-row">
+                <dt>CHARGE</dt>
+                <dd>{{ entry.offense || 'PENDING' }}</dd>
+              </div>
+              <div class="meta-row">
+                <dt>AURA Δ</dt>
+                <dd>{{ entry.auraScore }}</dd>
+              </div>
+            </dl>
+
+            <span v-if="(entry.kind || 'negative') === 'negative'" class="stamp stamp-wanted" aria-hidden="true">
+              <em>WANTED</em>
+              <span>AT LARGE</span>
+            </span>
+            <span v-else class="stamp stamp-commended" aria-hidden="true">
+              <em>COMMENDED</em>
+              <span>SIGMA OF VALOR</span>
+            </span>
           </article>
         </div>
 
         <div v-else class="gallery-empty">
-          <h2>No legends archived yet</h2>
-          <p>Rank-change mugshots will appear here during the demo.</p>
+          <div class="empty-folder" aria-hidden="true">
+            <span class="empty-folder-tab">CASE #----</span>
+            <span class="empty-postit">No cases<br />on file.<br />Yet.</span>
+          </div>
+          <p class="empty-subline">Rank-change mugshots will surface here during the demo.</p>
         </div>
       </template>
     </section>
@@ -885,7 +965,7 @@ const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value
 
     <section v-else class="viewer-screen">
       <div v-if="!started" class="start-panel-shell">
-        <div class="start-bg" :style="{ backgroundImage: 'url(/images/rabbit.jpg)' }"></div>
+        <div class="start-bg" :style="{ '--start-bg-img': 'url(/images/rabbit.jpg)' }"></div>
         <div class="start-bg-tint"></div>
         <div class="start-panel-content">
           <p class="start-meta">{{ syncMode }}</p>
@@ -925,11 +1005,22 @@ const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value
             :class="{ negative: auraScore < 0, 'tier-up': tierUp }"
             :style="auraHudStyle"
           >
-            <span class="aura-emoji">{{ auraEmoji }}</span>
-            <span class="aura-title">{{ auraTitle }}</span>
-            <span class="aura-score">
-              <span class="aura-score-roll">{{ displayedAuraScore }}</span>
-            </span>
+            <div class="aura-emblem" aria-hidden="true">
+              <span class="aura-emblem-inner">
+                <span class="aura-portrait"></span>
+              </span>
+              <span class="aura-emoji-pip">{{ auraEmoji }}</span>
+            </div>
+            <div class="aura-banner">
+              <span class="aura-rank-label" aria-hidden="true">RANK ::</span>
+              <span class="aura-title">{{ auraTitle }}</span>
+            </div>
+            <div class="aura-score-chip">
+              <span class="aura-score-prefix" aria-hidden="true">PTS</span>
+              <span class="aura-score">
+                <span class="aura-score-roll">{{ displayedAuraScore }}</span>
+              </span>
+            </div>
             <div class="aura-sparkles">
               <span
                 v-for="s in sparkles"
@@ -1079,8 +1170,18 @@ const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value
 .start-bg {
   position: absolute;
   inset: 0;
-  background-size: cover;
-  background-position: center;
+  /* layered: rabbit photo on top (if it exists), painted fallback always renders below.
+     drop /images/rabbit.jpg (or any size) and it'll cover the painted layer. */
+  background-image:
+    var(--start-bg-img, none),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse 60% 55% at 28% 32%, rgba(255, 200, 80, 0.42), transparent 70%),
+    radial-gradient(ellipse 55% 45% at 78% 72%, rgba(255, 60, 120, 0.35), transparent 70%),
+    radial-gradient(ellipse 80% 70% at 50% 100%, rgba(0, 229, 255, 0.18), transparent 75%),
+    linear-gradient(180deg, #1a0d0a 0%, #050507 70%);
+  background-size: cover, auto, auto, auto, auto, auto;
+  background-position: center, 0 0, center, center, center, center;
+  background-repeat: no-repeat, repeat, no-repeat, no-repeat, no-repeat, no-repeat;
   filter: contrast(1.15) saturate(1.2) brightness(0.65);
   animation: bg-drift 18s ease-in-out infinite alternate;
 }
