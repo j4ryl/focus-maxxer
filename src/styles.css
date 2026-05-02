@@ -96,9 +96,10 @@ button {
   display: grid;
   align-content: center;
   width: min(100%, 560px);
+  max-width: 100%;
   height: 100svh;
   margin: 0 auto;
-  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  padding: max(24px, env(safe-area-inset-top)) clamp(14px, 4.5vw, 20px) max(24px, env(safe-area-inset-bottom));
 }
 
 .start-panel p,
@@ -110,9 +111,11 @@ button {
 
 h1 {
   margin: 0 0 28px;
-  font-size: clamp(3.1rem, 16vw, 6.6rem);
+  font-size: clamp(2.2rem, 11vw, 6.6rem);
   line-height: 0.9;
   letter-spacing: 0;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .start-button {
@@ -901,7 +904,7 @@ h1 {
   width: 100vw;
   height: 100svh;
   overflow: auto;
-  padding: max(18px, env(safe-area-inset-top)) 16px max(22px, env(safe-area-inset-bottom));
+  padding: max(18px, env(safe-area-inset-top)) clamp(10px, 4vw, 16px) max(22px, env(safe-area-inset-bottom));
   background:
     radial-gradient(circle at 20% 0%, rgba(255, 230, 0, 0.18), transparent 34rem),
     radial-gradient(circle at 80% 10%, rgba(0, 229, 255, 0.14), transparent 30rem),
@@ -1036,6 +1039,18 @@ h1 {
 
   .gallery-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .gallery-card,
+  .gallery-card img {
+    min-height: 180px;
+  }
+}
+
+@media (max-width: 380px) {
+  .gallery-grid {
+    grid-template-columns: 1fr;
   }
 }
 
