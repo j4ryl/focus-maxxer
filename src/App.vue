@@ -69,7 +69,7 @@ const fakeCaptions = [
 
 const startBaitIndex = ref(0);
 const startBaitText = computed(() => fakeCaptions[startBaitIndex.value % fakeCaptions.length]);
-const fakeOnlineCount = ref(127432);
+const fakeOnlineCount = ref(676767);
 
 // aura derived UI
 const auraTitle = computed(() => {
