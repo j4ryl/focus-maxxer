@@ -1,6 +1,6 @@
 <script setup>
 import * as faceapi from 'face-api.js';
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { isFirebaseEnabled, setForcePunishment, subscribeForcePunishment } from './sync';
 
 const adminPin = import.meta.env.VITE_ADMIN_PIN || 'face-rot';
@@ -26,6 +26,101 @@ const auraPopupVisible = ref(false);
 const auraPopupKind = ref('negative');
 const auraPopupTitle = ref('Beta Status');
 const auraPopupKey = ref(0);
+const archiveCaseNumber = ref(generateCaseNumber());
+const archiveOffense = ref('LOOKING AT PHONE');
+
+// surveillance + session-time-driven aura float
+const sessionStartedAt = ref(0);
+const nowMs = ref(Date.now());
+const reducedMotion = ref(false);
+const punishmentSilenced = ref(false);
+
+// system toasts (cursed terminal layer)
+const toasts = ref([]);
+let toastSeq = 0;
+
+// caption per-word rendering
+const liveCaptionWords = computed(() => {
+  const trimmed = (caption.value || '').replace(/\s+/g, ' ').trim();
+  if (!trimmed) return [];
+  return trimmed.split(' ').slice(-14);
+});
+
+// rotating attention bait used while waiting for transcription
+const fakeCaptions = [
+  'BRO IS SPEAKING IN 1.25X SPEED',
+  'POV: YOU ARE LOCKED IN ACADEMICALLY',
+  'THE SLIDES ARE OPTIONAL BUT THE LORE IS NOT',
+  'AVERAGE GROUP PROJECT SURVIVAL TECHNIQUE',
+  'FOCUS LEVELS REACHING LEGALLY CONCERNING NUMBERS',
+  'WHEN THE EXAMPLE HAS THREE EDGE CASES AND A DREAM',
+];
+
+const startBaitIndex = ref(0);
+const startBaitText = computed(() => fakeCaptions[startBaitIndex.value % fakeCaptions.length]);
+const fakeOnlineCount = ref(127432);
+
+// aura derived UI
+const auraTitle = computed(() => {
+  if (auraScore.value >= 100) return 'Ultimate Sigma';
+  if (auraScore.value >= 50) return 'Chief Rizz Officer';
+  if (auraScore.value >= 0) return 'Locked-In Scholar';
+  if (auraScore.value <= -50) return 'Level 1 Crook';
+  return 'Beta Status';
+});
+const auraRankLevel = computed(() => {
+  if (auraScore.value >= 100) return 4;
+  if (auraScore.value >= 50) return 3;
+  if (auraScore.value >= 0) return 2;
+  if (auraScore.value <= -50) return 0;
+  return 1;
+});
+const auraEmoji = computed(() => {
+  if (auraScore.value >= 100) return '👑';
+  if (auraScore.value >= 50) return '🔥';
+  if (auraScore.value >= 0) return '🧠';
+  if (auraScore.value <= -50) return '💀';
+  return '🤡';
+});
+
+const sessionMinutes = computed(() => {
+  if (!sessionStartedAt.value) return 0;
+  return Math.max(0, (nowMs.value - sessionStartedAt.value) / 60000);
+});
+
+// HUD float-up: drifts up to 56px above its anchor over the first 8 mins
+const auraFloat = computed(() => Math.min(56, sessionMinutes.value * 7));
+// Glow intensity scales over the first 6 mins, capped at 1
+const auraGlow = computed(() => Math.min(1, sessionMinutes.value / 6));
+
+const auraHudStyle = computed(() => ({
+  '--aura-float': `${auraFloat.value}px`,
+  '--aura-glow': auraGlow.value.toFixed(3),
+}));
+
+const tierUp = ref(false);
+const sparkles = ref([]);
+let sparkleSeq = 0;
+
+const punishmentActive = computed(() => forcedPunishment.value || attentionLost.value);
+
+const unsupportedReason = computed(() => {
+  const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+  const isSecure = window.isSecureContext || isLocalhost;
+
+  if (!isSecure) return 'Open over HTTPS so camera and microphone permissions work.';
+  if (!navigator.mediaDevices?.getUserMedia) return 'This browser does not expose camera access.';
+  return '';
+});
+
+const surveillanceTimestamp = computed(() => {
+  const d = new Date(nowMs.value);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+});
+
+// barcode bars for the archive card (deterministic per popup)
+const archiveBars = ref(makeBarcode());
 
 const selfieVideo = ref(null);
 const mugshotCanvas = ref(null);
@@ -47,39 +142,49 @@ let lastAuraTickAt = 0;
 let lastAuraTitle = 'Locked-In Scholar';
 let rankUpAudio;
 let rankDownAudio;
+let clockInterval;
+let baitInterval;
+let onlineCounterInterval;
+let lastAttentionLost = false;
 
-const punishmentActive = computed(() => forcedPunishment.value || attentionLost.value);
-const auraTitle = computed(() => {
-  if (auraScore.value >= 100) return 'Ultimate Sigma';
-  if (auraScore.value >= 50) return 'Chief Rizz Officer';
-  if (auraScore.value >= 0) return 'Locked-In Scholar';
-  if (auraScore.value <= -50) return 'Level 1 Crook';
-  return 'Beta Status';
-});
-const auraRankLevel = computed(() => {
-  if (auraScore.value >= 100) return 4;
-  if (auraScore.value >= 50) return 3;
-  if (auraScore.value >= 0) return 2;
-  if (auraScore.value <= -50) return 0;
-  return 1;
-});
-const unsupportedReason = computed(() => {
-  const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-  const isSecure = window.isSecureContext || isLocalhost;
+function generateCaseNumber() {
+  return `FM-${Math.floor(Math.random() * 89999 + 10000)}`;
+}
 
-  if (!isSecure) return 'Open over HTTPS so camera and microphone permissions work.';
-  if (!navigator.mediaDevices?.getUserMedia) return 'This browser does not expose camera access.';
-  return '';
-});
+function makeBarcode() {
+  const bars = [];
+  let total = 0;
+  while (total < 100) {
+    const w = Math.random() < 0.5 ? 1 : Math.random() < 0.7 ? 2 : 4;
+    bars.push(w);
+    total += w + 1;
+  }
+  return bars;
+}
 
-const fakeCaptions = [
-  'BRO IS SPEAKING IN 1.25X SPEED',
-  'POV: YOU ARE LOCKED IN ACADEMICALLY',
-  'THE SLIDES ARE OPTIONAL BUT THE LORE IS NOT',
-  'AVERAGE GROUP PROJECT SURVIVAL TECHNIQUE',
-  'FOCUS LEVELS REACHING LEGALLY CONCERNING NUMBERS',
-  'WHEN THE EXAMPLE HAS THREE EDGE CASES AND A DREAM',
-];
+function pushToast(text, kind = 'info') {
+  const id = ++toastSeq;
+  toasts.value = [...toasts.value, { id, text, kind }].slice(-4);
+  window.setTimeout(() => {
+    toasts.value = toasts.value.filter((t) => t.id !== id);
+  }, 2400);
+}
+
+function emitSparkles(count = 6) {
+  if (reducedMotion.value) return;
+  for (let i = 0; i < count; i++) {
+    const id = ++sparkleSeq;
+    const sx = (Math.random() * 80 - 40) + 'px';
+    const sy = (-40 - Math.random() * 60) + 'px';
+    const left = (Math.random() * 80 + 10) + '%';
+    const top = (Math.random() * 60 + 20) + '%';
+    const glyph = ['✨', '⭐', '💫', '🔥'][Math.floor(Math.random() * 4)];
+    sparkles.value.push({ id, glyph, sx, sy, left, top });
+    window.setTimeout(() => {
+      sparkles.value = sparkles.value.filter((s) => s.id !== id);
+    }, 1700);
+  }
+}
 
 function handleMissingVideo(kind) {
   if (kind === 'subway' && subwaySrc.value !== '/videos/gta.mp4') {
@@ -96,7 +201,7 @@ function normalizeTranscript(text) {
     .replace(/\s+/g, ' ')
     .trim()
     .toUpperCase()
-    .slice(-120);
+    .slice(-160);
 }
 
 async function loadFaceModel() {
@@ -288,31 +393,29 @@ function drawMugshotOverlay(kind) {
   context.drawImage(video, 0, 0, width, height);
   context.restore();
 
+  // crosshair on negative
+  if (kind === 'negative') {
+    context.strokeStyle = 'rgba(255, 45, 85, 0.85)';
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(width / 2, 40);
+    context.lineTo(width / 2, height - 40);
+    context.moveTo(40, height / 2);
+    context.lineTo(width - 40, height / 2);
+    context.stroke();
+
+    context.strokeStyle = '#ff2d55';
+    context.lineWidth = 3;
+    context.strokeRect(width / 2 - 70, height / 2 - 90, 140, 180);
+  }
+
   context.textAlign = 'center';
-  context.lineWidth = 10;
+  context.lineWidth = 8;
   context.strokeStyle = '#050507';
   context.fillStyle = kind === 'positive' ? '#ffe600' : '#ff2d55';
-  context.font = '900 74px Impact, system-ui';
-  context.strokeText(kind === 'positive' ? '😎' : '🤡', width / 2, 100);
-  context.fillText(kind === 'positive' ? '😎' : '🤡', width / 2, 100);
-
-  if (kind === 'negative') {
-    context.fillStyle = '#ff2d55';
-    context.beginPath();
-    context.arc(width / 2, height * 0.48, 18, 0, Math.PI * 2);
-    context.fill();
-    context.font = '900 38px Impact, system-ui';
-    context.strokeStyle = '#000';
-    context.fillStyle = '#ffe600';
-    context.strokeText('AURA DEBT', width / 2, height - 34);
-    context.fillText('AURA DEBT', width / 2, height - 34);
-  } else {
-    context.font = '900 42px Impact, system-ui';
-    context.strokeStyle = '#000';
-    context.fillStyle = '#ffe600';
-    context.strokeText('RIZZ RESTORED', width / 2, height - 34);
-    context.fillText('RIZZ RESTORED', width / 2, height - 34);
-  }
+  context.font = '900 64px Impact, system-ui';
+  context.strokeText(kind === 'positive' ? '😎' : '🤡', width / 2, 80);
+  context.fillText(kind === 'positive' ? '😎' : '🤡', width / 2, 80);
 }
 
 async function showAuraPopup(kind) {
@@ -320,12 +423,31 @@ async function showAuraPopup(kind) {
   auraPopupTitle.value = auraTitle.value;
   auraPopupKey.value += 1;
   auraPopupVisible.value = true;
+  archiveCaseNumber.value = generateCaseNumber();
+  archiveBars.value = makeBarcode();
+  archiveOffense.value = pickOffense(kind);
   await nextTick();
   drawMugshotOverlay(kind);
   window.clearTimeout(auraPopupTimer);
   auraPopupTimer = window.setTimeout(() => {
     auraPopupVisible.value = false;
-  }, 1500);
+  }, 1800);
+}
+
+function pickOffense(kind) {
+  if (kind === 'positive') {
+    const goods = ['SUSTAINED EYE CONTACT', 'COMPLETED A THOUGHT', 'NO PHONE FOR 2 MIN', 'POSTURE: SIGMA'];
+    return goods[Math.floor(Math.random() * goods.length)];
+  }
+  const bads = [
+    'LOOKING AT PHONE',
+    'GLAZED OVER',
+    'LEFT THE DESK',
+    'EYES CLOSED MID-LECTURE',
+    'GROUP CHAT REPLY',
+    'DOOMSCROLL DETECTED',
+  ];
+  return bads[Math.floor(Math.random() * bads.length)];
 }
 
 async function warmRankAudio() {
@@ -334,7 +456,7 @@ async function warmRankAudio() {
 
   for (const audio of [rankUpAudio, rankDownAudio]) {
     audio.preload = 'auto';
-    audio.volume = 1;
+    audio.volume = 0.85;
     audio.muted = true;
     try {
       await audio.play();
@@ -353,7 +475,7 @@ async function playRankAudio(direction) {
   if (!audio) return;
 
   audio.currentTime = 0;
-  audio.volume = 1;
+  audio.volume = 0.85;
   audio.muted = false;
   await audio.play().catch(() => undefined);
 }
@@ -378,6 +500,20 @@ function updateAura(isBadAttention) {
     lastAuraTitle = nextTitle;
     showAuraPopup(auraScore.value < 0 ? 'negative' : 'positive');
     playRankAudio(nextRankLevel > previousRankLevel ? 'up' : 'down');
+    if (nextRankLevel > previousRankLevel) {
+      tierUp.value = true;
+      window.setTimeout(() => (tierUp.value = false), 600);
+      emitSparkles(8);
+      pushToast(`> RANK UP: ${nextTitle.toUpperCase()}`, 'info');
+      try {
+        navigator.vibrate?.(80);
+      } catch {}
+    } else {
+      pushToast(`> RANK DOWN: ${nextTitle.toUpperCase()}`, 'bad');
+      try {
+        navigator.vibrate?.([40, 30, 40]);
+      } catch {}
+    }
   }
 }
 
@@ -439,12 +575,13 @@ function stopVibration() {
 }
 
 async function activatePunishment() {
+  punishmentSilenced.value = false;
   await nextTick();
   const video = punishmentVideo.value;
   if (!video) return;
 
   video.muted = false;
-  video.volume = 1;
+  video.volume = 0.85;
   video.currentTime = 0;
   try {
     await video.play();
@@ -452,6 +589,7 @@ async function activatePunishment() {
     status.value = 'Tap once to unlock punishment audio';
   }
   startVibration();
+  pushToast('> SYS: focus.exe terminated', 'bad');
 }
 
 function deactivatePunishment() {
@@ -459,6 +597,16 @@ function deactivatePunishment() {
   video?.pause();
   if (video) video.currentTime = 0;
   stopVibration();
+}
+
+function silencePunishment() {
+  const video = punishmentVideo.value;
+  if (video) {
+    video.muted = true;
+    video.volume = 0;
+  }
+  stopVibration();
+  punishmentSilenced.value = true;
 }
 
 async function warmMediaElements() {
@@ -474,7 +622,7 @@ async function warmMediaElements() {
 
   if (punishment) {
     punishment.muted = false;
-    punishment.volume = 1;
+    punishment.volume = 0.85;
     punishment.loop = true;
     punishment.playsInline = true;
     await punishment.play().catch(() => undefined);
@@ -504,6 +652,7 @@ async function enterFocusMode() {
     });
 
     started.value = true;
+    sessionStartedAt.value = Date.now();
     await nextTick();
 
     if (selfieVideo.value) {
@@ -516,6 +665,7 @@ async function enterFocusMode() {
     await document.documentElement.requestFullscreen?.().catch(() => undefined);
     await warmMediaElements();
     await warmRankAudio();
+    pushToast('> SYS: lock-in protocol engaged', 'info');
     await startRealtimeTranscription(mediaStream);
 
     try {
@@ -552,23 +702,69 @@ watch(punishmentActive, (active) => {
   }
 });
 
+// system toast on attention transitions
+watch(attentionLost, (lost) => {
+  if (lost === lastAttentionLost) return;
+  lastAttentionLost = lost;
+  if (lost) {
+    pushToast('> ATTENTION LOST. AURA DECAY ACTIVE', 'bad');
+  } else {
+    pushToast('> EYE CONTACT RESTORED', 'info');
+  }
+});
+
 unsubscribe = subscribeForcePunishment((isForced) => {
   forcedPunishment.value = isForced;
+});
+
+onMounted(() => {
+  reducedMotion.value =
+    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+
+  // 1Hz clock for surveillance timestamp + session-time-driven HUD float
+  clockInterval = window.setInterval(() => {
+    nowMs.value = Date.now();
+  }, 1000);
+
+  // pre-start bait copy rotates every 1.4s
+  baitInterval = window.setInterval(() => {
+    startBaitIndex.value++;
+  }, 1400);
+
+  // fake online counter ticks the last digit
+  onlineCounterInterval = window.setInterval(() => {
+    fakeOnlineCount.value += Math.random() < 0.5 ? 1 : -1;
+  }, 220);
 });
 
 onBeforeUnmount(() => {
   unsubscribe?.();
   window.clearInterval(detectionInterval);
+  window.clearInterval(clockInterval);
+  window.clearInterval(baitInterval);
+  window.clearInterval(onlineCounterInterval);
   window.clearTimeout(auraPopupTimer);
   stopVibration();
   realtimeDataChannel?.close?.();
   realtimePeerConnection?.close?.();
   mediaStream?.getTracks().forEach((track) => track.stop());
 });
+
+const formattedOnline = computed(() => fakeOnlineCount.value.toLocaleString('en-US'));
+
+// vignette intensity follows negative aura
+const vignetteOpacity = computed(() => {
+  if (auraScore.value >= 0) return 0;
+  return Math.min(0.7, Math.abs(auraScore.value) / 100);
+});
+
+const ctaBait = ['TAP TO COOK', 'ENGAGE LOCK-IN', 'ACTIVATE SIGMA MODE', 'DEPLOY ATTENTION'];
+const ctaIndex = computed(() => startBaitIndex.value % ctaBait.length);
+const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value]));
 </script>
 
 <template>
-  <main class="app-shell" :class="{ admin: isAdmin, started: started && !isAdmin, punishing: punishmentActive }">
+  <main class="app-shell" :class="{ admin: isAdmin, started: started && !isAdmin, punishing: punishmentActive, 'reduced-motion': reducedMotion }">
     <section v-if="isAdmin" class="admin-screen">
       <div v-if="!adminAllowed" class="locked">
         <h1>Locked</h1>
@@ -593,12 +789,23 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else class="viewer-screen">
-      <div v-if="!started" class="start-panel">
-        <p>{{ syncMode }}</p>
-        <h1>FocusMaxxer</h1>
-        <button class="start-button" type="button" :disabled="busy" @click="enterFocusMode">
-          {{ busy ? 'Entering' : 'Enter Focus Mode' }}
-        </button>
+      <div v-if="!started" class="start-panel-shell">
+        <div class="start-bg" :style="{ backgroundImage: 'url(/images/rabbit.jpg)' }"></div>
+        <div class="start-bg-tint"></div>
+        <div class="start-panel-content">
+          <p class="start-meta">{{ syncMode }}</p>
+          <h1 class="start-title">FocusMaxxer</h1>
+          <p class="start-bait">{{ startBaitText }}</p>
+          <div class="start-online">
+            <span class="rec-dot"></span>
+            <strong>{{ formattedOnline }}</strong>
+            <span>LOCKED IN RN</span>
+          </div>
+          <button class="start-button" type="button" :disabled="busy" @click="enterFocusMode">
+            {{ ctaCopy }}
+          </button>
+          <p class="start-trust">ALLOW CAMERA. TRUST.</p>
+        </div>
       </div>
 
       <template v-else>
@@ -617,21 +824,103 @@ onBeforeUnmount(() => {
             preload="auto"
             @error="handleMissingVideo('subway')"
           ></video>
-          <div class="aura-hud" :class="{ negative: auraScore < 0 }">
-            <span>{{ auraTitle }}</span>
-            <strong>{{ auraScore }}</strong>
+
+          <div
+            class="aura-hud"
+            :class="{ negative: auraScore < 0, 'tier-up': tierUp }"
+            :style="auraHudStyle"
+          >
+            <span class="aura-emoji">{{ auraEmoji }}</span>
+            <span class="aura-title">{{ auraTitle }}</span>
+            <span class="aura-score">
+              <Transition name="aura-roll" mode="out-in">
+                <span class="aura-score-roll" :key="auraScore">{{ auraScore }}</span>
+              </Transition>
+            </span>
+            <div class="aura-sparkles">
+              <span
+                v-for="s in sparkles"
+                :key="s.id"
+                class="aura-sparkle"
+                :style="{ left: s.left, top: s.top, '--sx': s.sx, '--sy': s.sy }"
+              >
+                {{ s.glyph }}
+              </span>
+            </div>
           </div>
-          <div class="caption-strip">{{ caption }}</div>
+
+          <div class="caption-strip">
+            <span
+              v-for="(word, i) in liveCaptionWords"
+              :key="`${i}-${word}`"
+              class="caption-word"
+              :class="[
+                `color-${(i % 4) + 1}`,
+                { 'is-active': i === liveCaptionWords.length - 1 },
+              ]"
+              :style="{ animationDelay: (i * 28) + 'ms' }"
+            >
+              {{ word }}
+            </span>
+          </div>
         </section>
 
-        <div v-if="auraPopupVisible" :key="auraPopupKey" class="aura-popup" :class="auraPopupKind">
-          <canvas ref="mugshotCanvas" class="mugshot-canvas"></canvas>
-          <div class="aura-popup-copy">
-            <span>{{ auraPopupKind === 'positive' ? '+ AURA' : '- AURA' }}</span>
-            <strong>{{ auraPopupTitle }}</strong>
+        <!-- surveillance HUD -->
+        <div class="surveillance-hud">
+          <div class="surveillance-row">
+            <span class="rec-dot"></span>
+            <span>REC</span>
+            <span>{{ surveillanceTimestamp }}</span>
+          </div>
+          <div class="surveillance-row">
+            <span>CASE: {{ archiveCaseNumber }}</span>
           </div>
         </div>
 
+        <!-- system toasts -->
+        <div class="system-toasts">
+          <div
+            v-for="t in toasts"
+            :key="t.id"
+            class="system-toast"
+            :class="{ bad: t.kind === 'bad' }"
+          >
+            {{ t.text }}
+          </div>
+        </div>
+
+        <!-- aura popup as police archive card -->
+        <div v-if="auraPopupVisible" :key="auraPopupKey" class="aura-popup" :class="auraPopupKind">
+          <div class="archive-card">
+            <div class="archive-card-header">
+              <span>FOCUSMAXXER PD</span>
+              <span class="archive-case">{{ archiveCaseNumber }}</span>
+            </div>
+            <canvas ref="mugshotCanvas" class="mugshot-canvas"></canvas>
+            <div class="archive-rapsheet">
+              <div class="archive-row">
+                <span class="archive-label">OFFENSE</span>
+                <span>{{ archiveOffense }}</span>
+              </div>
+              <div class="archive-row">
+                <span class="archive-label">{{ auraPopupKind === 'positive' ? 'AURA GAINED' : 'AURA REVOKED' }}</span>
+                <span>{{ Math.abs(auraScore) }}</span>
+              </div>
+              <div class="archive-row">
+                <span class="archive-label">RANK</span>
+                <span>{{ auraPopupTitle.toUpperCase() }}</span>
+              </div>
+            </div>
+            <div class="archive-barcode">
+              <span v-for="(w, i) in archiveBars" :key="i" :style="{ width: w + 'px' }"></span>
+            </div>
+            <div class="archive-stamp" :class="auraPopupKind === 'positive' ? 'approved' : 'void'">
+              {{ auraPopupKind === 'positive' ? 'RIZZED' : 'VOID' }}
+            </div>
+          </div>
+        </div>
+
+        <!-- punishment overlay -->
         <div v-show="punishmentActive" class="punishment-overlay">
           <video
             ref="punishmentVideo"
@@ -643,9 +932,242 @@ onBeforeUnmount(() => {
             preload="auto"
             @error="handleMissingVideo('punishment')"
           ></video>
-          <div class="punishment-text">LOOK AT THE SCREEN</div>
+          <div class="punishment-siren"></div>
+
+          <!-- fake Win98 error dialog -->
+          <div class="fake-error" role="presentation">
+            <div class="fake-error-titlebar">
+              <span>focus.exe</span>
+              <span class="fake-error-x">X</span>
+            </div>
+            <div class="fake-error-body">
+              <span class="fake-error-icon">⚠️</span>
+              <span>focus.exe has stopped responding. Aura leaking.</span>
+            </div>
+            <div class="fake-error-buttons">
+              <span class="fake-error-button">OK</span>
+              <span class="fake-error-button">CANCEL</span>
+            </div>
+          </div>
+
+          <div class="punishment-text-stack">
+            <div class="punishment-text">LOOK AT THE SCREEN</div>
+            <div class="punishment-text tag-secondary">BRO IS COOKED</div>
+            <div class="punishment-text tag-tertiary">-10000 AURA</div>
+          </div>
+
+          <button
+            class="punishment-escape"
+            type="button"
+            aria-label="Silence punishment"
+            @click="silencePunishment"
+          >
+            X
+          </button>
         </div>
+
+        <!-- cursed scanline + danger vignette layer (always present once started) -->
+        <div class="cursed-layer"></div>
+        <div class="danger-vignette" :style="{ '--vignette-opacity': vignetteOpacity }"></div>
       </template>
     </section>
   </main>
 </template>
+
+<style scoped>
+/* component-local helpers for the pre-start screen */
+.start-panel-shell {
+  position: relative;
+  width: 100%;
+  height: 100svh;
+  overflow: hidden;
+}
+
+.start-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: contrast(1.15) saturate(1.2) brightness(0.65);
+  animation: bg-drift 18s ease-in-out infinite alternate;
+}
+
+.start-bg-tint {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 230, 0, 0.22), transparent 28rem),
+    radial-gradient(circle at 90% 20%, rgba(255, 45, 85, 0.28), transparent 24rem),
+    rgba(5, 5, 7, 0.55);
+}
+
+.start-panel-content {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  align-content: center;
+  width: min(100%, 560px);
+  height: 100svh;
+  margin: 0 auto;
+  padding: max(24px, env(safe-area-inset-top)) 22px max(24px, env(safe-area-inset-bottom));
+  gap: 14px;
+}
+
+.start-meta {
+  margin: 0;
+  font-family: var(--font-terminal);
+  color: var(--c-lime);
+  letter-spacing: 0.08em;
+  font-size: 1.05rem;
+  text-shadow: 0 0 6px rgba(181, 255, 0, 0.5);
+}
+
+.start-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(3.6rem, 18vw, 7.2rem);
+  line-height: 0.86;
+  text-transform: uppercase;
+  color: var(--c-yellow);
+  text-shadow:
+    0 3px 0 #000,
+    3px 0 0 #000,
+    -3px 0 0 #000,
+    0 -3px 0 #000,
+    8px 8px 0 var(--c-pink),
+    -8px -4px 0 var(--c-cyan);
+  animation: title-wobble 2s ease-in-out infinite alternate;
+}
+
+.start-bait {
+  margin: 0;
+  font-family: var(--font-tiktok);
+  font-size: clamp(1.2rem, 5vw, 1.9rem);
+  color: var(--c-paper);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-shadow:
+    0 2px 0 #000,
+    2px 0 0 #000,
+    -2px 0 0 #000,
+    0 -2px 0 #000,
+    4px 4px 0 var(--c-pink);
+  animation: bait-flash 1.4s steps(2, jump-none) infinite;
+}
+
+.start-online {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(5, 5, 7, 0.7);
+  border: 1px solid rgba(181, 255, 0, 0.4);
+  border-radius: 4px;
+  font-family: var(--font-terminal);
+  color: var(--c-lime);
+  font-size: 1.1rem;
+  width: max-content;
+  text-shadow: 0 0 6px rgba(181, 255, 0, 0.5);
+}
+
+.start-online strong {
+  color: var(--c-paper);
+  font-size: 1.2em;
+}
+
+.start-trust {
+  margin: 0;
+  font-family: var(--font-cursed);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--c-pink);
+  text-shadow: 0 0 8px rgba(255, 45, 85, 0.6);
+  animation: trust-pulse 0.9s ease-in-out infinite alternate;
+}
+
+.start-button {
+  position: relative;
+  isolation: isolate;
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.start-button::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  z-index: -1;
+  border-radius: 12px;
+  background: conic-gradient(
+    from var(--angle, 0deg),
+    var(--c-yellow),
+    var(--c-pink),
+    var(--c-cyan),
+    var(--c-lime),
+    var(--c-yellow)
+  );
+  animation: aura-spin 4s linear infinite;
+}
+
+@keyframes bg-drift {
+  from {
+    transform: scale(1.04) translate(0, 0);
+  }
+  to {
+    transform: scale(1.12) translate(-1.5%, -1%);
+  }
+}
+
+@keyframes title-wobble {
+  from {
+    transform: rotate(-1.5deg) translateY(0);
+  }
+  to {
+    transform: rotate(1.5deg) translateY(-3px);
+  }
+}
+
+@keyframes bait-flash {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes trust-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  to {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
+/* aura number roll transition */
+.aura-roll-enter-from {
+  transform: translateY(80%);
+  opacity: 0;
+}
+.aura-roll-leave-to {
+  transform: translateY(-80%);
+  opacity: 0;
+}
+.aura-roll-enter-active,
+.aura-roll-leave-active {
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease;
+}
+
+.app-shell.reduced-motion .start-bg,
+.app-shell.reduced-motion .start-title,
+.app-shell.reduced-motion .start-bait,
+.app-shell.reduced-motion .start-trust {
+  animation: none !important;
+}
+</style>
