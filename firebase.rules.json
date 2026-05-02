@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "demo": {
+      "activeVideo": {
+        ".read": true,
+        ".write": true,
+        ".validate": "newData.isString() && newData.val().matches(/^(gta|subway|sand|family)$/)"
+      }
+    }
+  }
+}

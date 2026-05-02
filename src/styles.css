@@ -1,0 +1,341 @@
+:root {
+  color: #f7f7fb;
+  background: #050507;
+  font-family:
+    Inter, Montserrat, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  width: 100vw;
+  height: 100svh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 230, 0, 0.2), transparent 28rem),
+    radial-gradient(circle at 90% 20%, rgba(255, 45, 85, 0.18), transparent 24rem),
+    #050507;
+}
+
+.viewer-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.start-panel,
+.locked,
+.admin-screen {
+  display: grid;
+  align-content: center;
+  width: min(100%, 560px);
+  height: 100svh;
+  margin: 0 auto;
+  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+}
+
+.start-panel p,
+.admin-header p {
+  margin: 0 0 8px;
+  color: #a9adb8;
+  font-size: 0.9rem;
+}
+
+h1 {
+  margin: 0 0 28px;
+  font-size: clamp(3.1rem, 16vw, 6.6rem);
+  line-height: 0.9;
+  letter-spacing: 0;
+}
+
+.start-button {
+  width: 100%;
+  min-height: 80px;
+  border: 0;
+  border-radius: 8px;
+  background: #ffe600;
+  color: #050507;
+  font-size: clamp(1.25rem, 7vw, 2rem);
+  font-weight: 950;
+  box-shadow: 0 16px 48px rgba(255, 230, 0, 0.18);
+}
+
+.start-button:disabled {
+  opacity: 0.65;
+}
+
+.dopamine-pane {
+  position: relative;
+  width: 100vw;
+  height: 100svh;
+  overflow: hidden;
+  background: #050507;
+}
+
+.subway-video,
+.punishment-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tracking-video {
+  position: fixed;
+  left: -2px;
+  top: -2px;
+  width: 1px;
+  height: 1px;
+  display: block;
+  opacity: 0.01;
+  transform: scaleX(-1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.caption-strip {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: max(46px, calc(env(safe-area-inset-bottom) + 44px));
+  z-index: 8;
+  color: #ffe600;
+  font-family:
+    Montserrat, Impact, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(1.35rem, 5.3vw, 3.8rem);
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow:
+    0 2px 0 #000,
+    2px 0 0 #000,
+    -2px 0 0 #000,
+    0 -2px 0 #000,
+    4px 4px 0 rgba(255, 45, 85, 0.95),
+    -4px -2px 0 rgba(0, 153, 255, 0.85);
+}
+
+.aura-hud {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  padding: 9px 11px;
+  border: 2px solid rgba(255, 230, 0, 0.8);
+  border-radius: 8px;
+  background: rgba(5, 5, 7, 0.74);
+  color: #ffe600;
+  font-size: clamp(0.82rem, 3.6vw, 1.15rem);
+  font-weight: 950;
+  text-transform: uppercase;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.34);
+}
+
+.aura-hud span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aura-hud strong {
+  min-width: 3ch;
+  color: #f7f7fb;
+  font-size: 1.25em;
+  text-align: right;
+}
+
+.aura-hud.negative {
+  border-color: rgba(255, 45, 85, 0.9);
+  color: #ff6d8a;
+}
+
+.aura-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: rgba(5, 5, 7, 0.32);
+  animation: mugshot-pop 1.5s ease both;
+}
+
+.mugshot-canvas {
+  width: min(68vw, 340px);
+  max-height: 64svh;
+  aspect-ratio: 3 / 4;
+  border: 5px solid #ffe600;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #111116;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.62),
+    8px 8px 0 #ff2d55,
+    -8px -8px 0 #00e5ff;
+}
+
+.aura-popup.negative .mugshot-canvas {
+  border-color: #ff2d55;
+}
+
+.aura-popup-copy {
+  position: fixed;
+  left: 50%;
+  bottom: max(72px, calc(env(safe-area-inset-bottom) + 54px));
+  width: min(92vw, 420px);
+  transform: translateX(-50%);
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.aura-popup-copy span,
+.aura-popup-copy strong {
+  display: block;
+  font-family:
+    Impact, Montserrat, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 950;
+  line-height: 0.9;
+  letter-spacing: 0;
+  text-shadow:
+    0 3px 0 #000,
+    3px 0 0 #000,
+    -3px 0 0 #000,
+    0 -3px 0 #000;
+}
+
+.aura-popup-copy span {
+  color: #f7f7fb;
+  font-size: clamp(1.4rem, 7vw, 3rem);
+}
+
+.aura-popup-copy strong {
+  color: #ffe600;
+  font-size: clamp(2.3rem, 12vw, 5rem);
+}
+
+.aura-popup.negative .aura-popup-copy strong {
+  color: #ff6d8a;
+}
+
+.punishment-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #ff2d55;
+}
+
+.punishment-video {
+  position: absolute;
+  inset: 0;
+  filter: contrast(1.65) saturate(2.2) hue-rotate(-12deg);
+}
+
+.punishment-text {
+  position: relative;
+  z-index: 2;
+  max-width: 92vw;
+  color: #ffe600;
+  font-family:
+    Impact, Montserrat, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(3rem, 18vw, 9rem);
+  font-weight: 950;
+  line-height: 0.9;
+  letter-spacing: 0;
+  text-align: center;
+  text-shadow:
+    0 4px 0 #000,
+    4px 0 0 #000,
+    -4px 0 0 #000,
+    0 -4px 0 #000,
+    10px 10px 0 #00e5ff;
+  animation: panic 0.18s infinite alternate;
+}
+
+.admin-screen {
+  gap: 26px;
+}
+
+.admin-header h1 {
+  margin-bottom: 0;
+  font-size: clamp(2.4rem, 12vw, 5.2rem);
+}
+
+.button-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.drop-button {
+  min-height: 142px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: #f7f7fb;
+  font-size: clamp(1.5rem, 8vw, 2.6rem);
+  font-weight: 950;
+}
+
+.drop-button.danger {
+  background: #ff2d55;
+}
+
+.drop-button.calm {
+  background: #111116;
+}
+
+@keyframes panic {
+  from {
+    transform: translate(-2px, 1px) rotate(-1deg) scale(1);
+  }
+
+  to {
+    transform: translate(2px, -1px) rotate(1deg) scale(1.035);
+  }
+}
+
+@keyframes mugshot-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.88) rotate(-2deg);
+  }
+
+  12%,
+  84% {
+    opacity: 1;
+    transform: scale(1) rotate(1deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.08) rotate(-1deg);
+  }
+}
