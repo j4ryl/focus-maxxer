@@ -143,7 +143,7 @@ export async function uploadHallOfFameSnapshot({ blob, auraScore, auraTitle, off
 
   if (hasFirebaseConfig) {
     const { db: database, storage: firebaseStorage } = await ensureFirebase();
-    const imagePath = `hall-of-fame/${createdAt}-${Math.random().toString(36).slice(2)}.jpg`;
+    const imagePath = `demo/hallOfFame/${createdAt}-${Math.random().toString(36).slice(2)}.jpg`;
     const imageRef = storageRef(firebaseStorage, imagePath);
     await uploadBytes(imageRef, blob, {
       contentType: blob.type || 'image/jpeg',
