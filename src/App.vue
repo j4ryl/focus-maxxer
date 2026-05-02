@@ -733,7 +733,6 @@ async function enterFocusMode() {
     await warmRankAudio();
     startAuraDisplayLoop();
     pushToast('> SYS: lock-in protocol engaged', 'info');
-    await startRealtimeTranscription(mediaStream);
 
     try {
       await loadFaceModel();
@@ -743,6 +742,11 @@ async function enterFocusMode() {
       faceReady.value = false;
       status.value = 'Manual godmode ready';
     }
+
+    // captions are best-effort — don't let them block face detection
+    startRealtimeTranscription(mediaStream).catch(() => {
+      pushToast('> CAPTIONS: offline', 'bad');
+    });
   } catch (error) {
     status.value = error?.name === 'NotAllowedError' ? 'Camera or microphone blocked' : 'Startup failed';
   } finally {
@@ -1049,17 +1053,6 @@ const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value
           </div>
         </section>
 
-        <!-- surveillance HUD -->
-        <div class="surveillance-hud">
-          <div class="surveillance-row">
-            <span class="rec-dot"></span>
-            <span>REC</span>
-            <span>{{ surveillanceTimestamp }}</span>
-          </div>
-          <div class="surveillance-row">
-            <span>CASE: {{ archiveCaseNumber }}</span>
-          </div>
-        </div>
 
         <!-- system toasts -->
         <div class="system-toasts">

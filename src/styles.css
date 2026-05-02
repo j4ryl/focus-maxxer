@@ -1106,10 +1106,13 @@ h1 {
    ========================================================================== */
 
 .gallery-screen {
-  position: relative;
+  position: fixed;
+  inset: 0;
   width: 100vw;
-  min-height: 100svh;
-  overflow: auto;
+  height: 100vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  z-index: 50;
   padding: max(20px, env(safe-area-inset-top)) clamp(14px, 4vw, 28px) max(28px, env(safe-area-inset-bottom));
   color: #ece1cb;
   background:

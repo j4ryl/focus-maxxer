@@ -1,5 +1,4 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getDatabase, onValue, push, ref, remove, set } from 'firebase/database';
 import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
 
@@ -8,6 +7,7 @@ const firebaseConfig = {
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
@@ -19,10 +19,8 @@ const localHallKey = 'focusmaxxer.hallOfFame';
 const channelName = 'focusmaxxer-demo';
 
 let app;
-let auth;
 let db;
 let storage;
-let authPromise;
 let channel;
 
 function getLocalChannel() {
@@ -34,11 +32,8 @@ function getLocalChannel() {
 
 async function ensureFirebase() {
   app = app || initializeApp(firebaseConfig);
-  auth = auth || getAuth(app);
   db = db || getDatabase(app);
   storage = storage || getStorage(app);
-  authPromise = authPromise || signInAnonymously(auth).catch(() => undefined);
-  await authPromise;
   return { db, storage };
 }
 
