@@ -1100,9 +1100,10 @@ const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value
   display: grid;
   align-content: center;
   width: min(100%, 560px);
+  max-width: 100%;
   height: 100svh;
   margin: 0 auto;
-  padding: max(24px, env(safe-area-inset-top)) 22px max(24px, env(safe-area-inset-bottom));
+  padding: max(24px, env(safe-area-inset-top)) clamp(14px, 4.5vw, 22px) max(24px, env(safe-area-inset-bottom));
   gap: 14px;
 }
 
@@ -1118,17 +1119,19 @@ const ctaCopy = computed(() => (busy.value ? 'Entering' : ctaBait[ctaIndex.value
 .start-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(3.6rem, 18vw, 7.2rem);
+  font-size: clamp(2.4rem, 13vw, 7.2rem);
   line-height: 0.86;
   text-transform: uppercase;
   color: var(--c-yellow);
+  word-break: keep-all;
+  overflow-wrap: normal;
   text-shadow:
     0 3px 0 #000,
     3px 0 0 #000,
     -3px 0 0 #000,
     0 -3px 0 #000,
-    8px 8px 0 var(--c-pink),
-    -8px -4px 0 var(--c-cyan);
+    6px 6px 0 var(--c-pink),
+    -6px -3px 0 var(--c-cyan);
   animation: title-wobble 2s ease-in-out infinite alternate;
 }
 
